@@ -82,7 +82,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
 
         val button = Button(this).apply {
-            text = "◉  DİNLE"
+            text = "DINLE"
             textSize = 16f
             typeface = Typeface.MONOSPACE
             setTextColor(Color.parseColor("#00E5FF"))
@@ -115,7 +115,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
 
         reactor.state = ReactorState.LISTENING
-        status.text = "DİNLİYORUM..."
+        status.text = "DINLIYORUM..."
         recognizer?.destroy()
         recognizer = SpeechRecognizer.createSpeechRecognizer(this).apply {
             setRecognitionListener(object : RecognitionListener {
@@ -123,17 +123,17 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                         ?.firstOrNull().orEmpty()
                     if (text.isBlank()) {
-                        status.text = "BİR ŞEY DUYAMADIM"
+                        status.text = "BIR SEY DUYAMADIM"
                         reactor.state = ReactorState.IDLE
                     } else {
-                        status.text = "SİZ: $text"
+                        status.text = "SIZ: " + text
                         reactor.state = ReactorState.THINKING
                         handleCommand(text.lowercase(Locale.getDefault()))
                     }
                     destroy()
                 }
                 override fun onError(error: Int) {
-                    status.text = "TEKRAR DENEYİN"
+                    status.text = "TEKRAR DENEYIN"
                     reactor.state = ReactorState.IDLE
                     speak("Tekrar deneyin.")
                     destroy()
@@ -156,101 +156,90 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     }
 
     private fun handleCommand(command: String) {
-        when {
-            command.contains("saat") -> {
-                val time = SimpleDateFormat("HH:mm", Locale("tr", "TR")).format(Date())
-                status.text = "Saat: $time"
-                speak("Saat $time")
+        if (command.contains("saat")) {
+            val time = SimpleDateFormat("HH:mm", Locale("tr", "TR")).format(Date())
+            status.text = "Saat: " + time
+            speak("Saat " + time)
+        } else if (command.contains("youtube")) {
+            startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://www.youtube.com")))
+            speak("YouTube'u aciyorum.")
+        } else if (command.contains("hava")) {
+            startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://www.google.com/search?q=hava+durumu")))
+            speak("Hava durumunu ariyorum.")
+        } else if (command.contains("ses ac") || command.contains("sesi ac")) {
+            val audio = getSystemService(AUDIO_SERVICE) as android.media.AudioManager
+            audio.adjustVolume(android.media.AudioManager.ADJUST_RAISE, android.media.AudioManager.FLAG_SHOW_UI)
+            speak("Sesi aciyorum.")
+        } else if (command.contains("merhaba") || command.contains("selam")) {
+            speak("Merhaba. Size nasil yardimci olabilirim?")
+        } else if (command.startsWith("hatirla")) {
+            val fact = command.removePrefix("hatirla").trim().removePrefix(":").trim()
+            if (fact.isNotBlank()) {
+                addMemory(fact)
+                status.text = "NOT EDILDI"
+                speak("Bunu hatirlayacagim.")
+            } else {
+                speak("Ne hatirlamami istediginizi anlamadim.")
             }
-            command.contains("youtube") -> {
-                startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://www.youtube.com")))
-                speak("YouTube'u açıyorum.")
+        } else if (command.contains("ne hatirliyorsun") || command.contains("neler biliyorsun")) {
+            val mem = getMemory()
+            if (mem.isBlank()) {
+                speak("Henuz hicbir sey hatirlamiyorum.")
+            } else {
+                speak("Sunlari hatirliyorum: " + mem)
             }
-            command.contains("hava") -> {
-                startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://www.google.com/search?q=hava+durumu")))
-                speak("Hava durumunu arıyorum.")
-            }
-            command.contains("ses aç") || command.contains("sesi aç") -> {
-                val audio = getSystemService(AUDIO_SERVICE) as android.media.AudioManager
-                audio.adjustVolume(android.media.AudioManager.ADJUST_RAISE, android.media.AudioManager.FLAG_SHOW_UI)
-                speak("Sesi açıyorum.")
-            }
-            command.contains("merhaba") || command.contains("selam") -> {
-                speak("Merhaba. Size nasıl yardımcı olabilirim?")
-            }
-            command.startsWith("hatırla") -> {
-                val fact = command.removePrefix("hatırla").trim().removePrefix(":").trim()
-                if (fact.isNotBlank()) {
-                    addMemory(fact)
-                    status.text = "NOT EDİLDİ"
-                    speak("Bunu hatırlayacağım.")
-                } else {
-                    speak("Ne hatırlamamı istediğinizi anlamadım.")
-                }
-            }
-            command.contains("ne hatırlıyorsun") || command.contains("neler biliyorsun") -> {
-                val mem = getMemory()
-                if (mem.isBlank()) {
-                    speak("Henüz hiçbir şey hatırlamıyorum.")
-                } else {
-                    speak("Şunları hatırlıyorum: $mem")
-                }
-            }
-            command.contains("hafızanı sil") || command.contains("unut") -> {
-                prefs.edit().remove("memory").apply()
-                status.text = "HAFIZA TEMİZLENDİ"
-                speak("Hafızamı temizledim.")
-            }
-            else -> askGemini(command)
+        } else if (command.contains("hafizani sil") || command.contains("unut")) {
+            prefs.edit().remove("memory").apply()
+            status.text = "HAFIZA TEMIZLENDI"
+            speak("Hafizami temizledim.")
+        } else {
+            askGemini(command)
         }
     }
 
     private fun askGemini(prompt: String) {
-        status.text = "DÜŞÜNÜYORUM..."
+        status.text = "DUSUNUYORUM..."
         reactor.state = ReactorState.THINKING
         Thread {
             try {
                 val apiKey = BuildConfig.GEMINI_API_KEY
-                val url = URL("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=$apiKey")
+                val url = URL("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=" + apiKey)
                 val connection = url.openConnection() as HttpURLConnection
                 connection.requestMethod = "POST"
                 connection.setRequestProperty("Content-Type", "application/json")
                 connection.doOutput = true
 
                 val memory = getMemory()
-                val persona = """
-                    Sen JARVIS'sin — sıcak, samimi, esprili ama saygılı bir kişisel asistansın.
-                    Robotik veya resmi konuşma, gerçek bir arkadaşla sohbet eder gibi konuş.
-                    Kısa ve doğal cümleler kur, gereksiz uzatma, sesli okunacağı için akıcı ve konuşma diline uygun yaz.
-                    Türkçe konuş. Ara sıra ismiyle hitap et (kullanıcı ismini söylediyse), sıcak bir ton kullan ama abartma.
-                    Kullanıcı hakkında hatırladığın bilgiler: ${if (memory.isNotBlank()) memory else "henüz yok"}.
-                    Uygun olduğunda bu bilgileri doğal şekilde cevaplarına yedir, ama her seferinde tekrar etme.
-                """.trimIndent()
+                val memoryPart = if (memory.isNotBlank()) memory else "henuz yok"
+                val personaBuilder = StringBuilder()
+                personaBuilder.append("Sen JARVIS'sin, sicak, samimi, esprili ama saygili bir kisisel asistansin. ")
+                personaBuilder.append("Robotik veya resmi konusma, gercek bir arkadasla sohbet eder gibi konus. ")
+                personaBuilder.append("Kisa ve dogal cumleler kur, gereksiz uzatma, sesli okunacagi icin akici ve konusma diline uygun yaz. ")
+                personaBuilder.append("Turkce konus. ")
+                personaBuilder.append("Kullanici hakkinda hatirladigin bilgiler: ")
+                personaBuilder.append(memoryPart)
+                personaBuilder.append(". Uygun oldugunda bu bilgileri dogal sekilde cevaplarina yedir, ama her seferinde tekrar etme.")
+                val persona = personaBuilder.toString()
 
-                val body = JSONObject().apply {
-                    put("system_instruction", JSONObject().apply {
-                        put("parts", JSONArray().put(JSONObject().put("text", persona)))
-                    })
-                    put("contents", JSONArray().put(
-                        JSONObject().apply {
-                            put("parts", JSONArray().put(JSONObject().put("text", prompt)))
-                        }
-                    ))
-                    put("generationConfig", JSONObject().apply {
-                        put("maxOutputTokens", 150)
-                        put("temperature", 0.85)
-                    })
-                }
-                    put("contents", JSONArray().put(
-                        JSONObject().apply {
-                            put("parts", JSONArray().put(JSONObject().put("text", prompt)))
-                        }
-                    ))
-                    put("generationConfig", JSONObject().apply {
-                        put("maxOutputTokens", 150)
-                        put("temperature", 0.7)
-                    })
-                }
+                val body = JSONObject()
+                val systemInstruction = JSONObject()
+                val systemParts = JSONArray()
+                systemParts.put(JSONObject().put("text", persona))
+                systemInstruction.put("parts", systemParts)
+                body.put("system_instruction", systemInstruction)
+
+                val contents = JSONArray()
+                val contentObj = JSONObject()
+                val parts = JSONArray()
+                parts.put(JSONObject().put("text", prompt))
+                contentObj.put("parts", parts)
+                contents.put(contentObj)
+                body.put("contents", contents)
+
+                val genConfig = JSONObject()
+                genConfig.put("maxOutputTokens", 150)
+                genConfig.put("temperature", 0.85)
+                body.put("generationConfig", genConfig)
 
                 connection.outputStream.use { it.write(body.toString().toByteArray()) }
 
@@ -267,7 +256,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                         .getJSONObject(0)
                         .getString("text")
                 } catch (e: Exception) {
-                    "Yapay zekadan cevap alınamadı."
+                    "HATA KODU " + responseCode + ": " + responseText
                 }
 
                 runOnUiThread {
@@ -276,8 +265,8 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 }
             } catch (e: Exception) {
                 runOnUiThread {
-                    status.text = "Bağlantı hatası oluştu."
-                    speak("Bağlantı hatası oluştu.")
+                    status.text = "Baglanti hatasi olustu."
+                    speak("Baglanti hatasi olustu.")
                 }
             }
         }.start()
@@ -293,7 +282,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                 startListening()
             } else {
-                status.text = "MİKROFON İZNİ VERİLMEDİ"
+                status.text = "MIKROFON IZNI VERILMEDI"
                 reactor.state = ReactorState.IDLE
                 speak("Mikrofon izni olmadan sizi duyamam.")
             }
@@ -309,7 +298,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         if (statusCode == TextToSpeech.SUCCESS) {
             val result = tts.setLanguage(Locale("tr", "TR"))
             if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
-                status.text = "TÜRKÇE SES PAKETİ BULUNAMADI"
+                status.text = "TURKCE SES PAKETI BULUNAMADI"
             }
 
             val maleVoice = tts.voices?.firstOrNull {
@@ -319,9 +308,9 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             if (maleVoice != null) {
                 tts.voice = maleVoice
             }
-
             tts.setPitch(0.82f)
             tts.setSpeechRate(0.95f)
+
             tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                 override fun onStart(utteranceId: String?) {}
                 override fun onDone(utteranceId: String?) {
@@ -333,7 +322,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 }
             })
         } else {
-            status.text = "SESLİ OKUMA BAŞLATILAMADI"
+            status.text = "SESLI OKUMA BASLATILAMADI"
         }
     }
 
