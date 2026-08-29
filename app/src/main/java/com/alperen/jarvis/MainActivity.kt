@@ -190,10 +190,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                             put("parts", JSONArray().put(JSONObject().put("text", prompt)))
                         }
                     ))
-                    put("generationConfig", JSONObject().apply {
-                        put("maxOutputTokens", 150)
-                        put("temperature", 0.7)
-                    })
                 }
 
                 connection.outputStream.use { it.write(body.toString().toByteArray()) }
