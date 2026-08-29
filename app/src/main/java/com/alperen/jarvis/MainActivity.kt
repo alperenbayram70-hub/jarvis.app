@@ -173,7 +173,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                         .getJSONObject(0)
                         .getString("text")
                 } catch (e: Exception) {
-                    "Yapay zekadan cevap alınamadı."
+                    "HATA KODU $responseCode: $responseText"
                 }
 
                 runOnUiThread {
