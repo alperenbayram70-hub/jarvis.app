@@ -35,6 +35,16 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private var recognizer: SpeechRecognizer? = null
     private lateinit var tts: TextToSpeech
 
+    private val prefs by lazy { getSharedPreferences("jarvis_memory", MODE_PRIVATE) }
+
+    private fun getMemory(): String = prefs.getString("memory", "") ?: ""
+
+    private fun addMemory(fact: String) {
+        val current = getMemory()
+        val updated = if (current.isBlank()) fact else "$current\n$fact"
+        prefs.edit().putString("memory", updated).apply()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         tts = TextToSpeech(this, this)
@@ -168,6 +178,29 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             command.contains("merhaba") || command.contains("selam") -> {
                 speak("Merhaba. Size nasıl yardımcı olabilirim?")
             }
+            command.startsWith("hatırla") -> {
+                val fact = command.removePrefix("hatırla").trim().removePrefix(":").trim()
+                if (fact.isNotBlank()) {
+                    addMemory(fact)
+                    status.text = "NOT EDİLDİ"
+                    speak("Bunu hatırlayacağım.")
+                } else {
+                    speak("Ne hatırlamamı istediğinizi anlamadım.")
+                }
+            }
+            command.contains("ne hatırlıyorsun") || command.contains("neler biliyorsun") -> {
+                val mem = getMemory()
+                if (mem.isBlank()) {
+                    speak("Henüz hiçbir şey hatırlamıyorum.")
+                } else {
+                    speak("Şunları hatırlıyorum: $mem")
+                }
+            }
+            command.contains("hafızanı sil") || command.contains("unut") -> {
+                prefs.edit().remove("memory").apply()
+                status.text = "HAFIZA TEMİZLENDİ"
+                speak("Hafızamı temizledim.")
+            }
             else -> askGemini(command)
         }
     }
@@ -184,12 +217,25 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 connection.setRequestProperty("Content-Type", "application/json")
                 connection.doOutput = true
 
+                val memory = getMemory()
                 val body = JSONObject().apply {
+                    if (memory.isNotBlank()) {
+                        put("system_instruction", JSONObject().apply {
+                            put("parts", JSONArray().put(JSONObject().put(
+                                "text",
+                                "Kullanıcı hakkında hatırlaman istenen bilgiler: $memory. Uygun olduğunda bu bilgileri cevaplarında kullan, ama gerekmedikçe tekrarlama."
+                            )))
+                        })
+                    }
                     put("contents", JSONArray().put(
                         JSONObject().apply {
                             put("parts", JSONArray().put(JSONObject().put("text", prompt)))
                         }
                     ))
+                    put("generationConfig", JSONObject().apply {
+                        put("maxOutputTokens", 150)
+                        put("temperature", 0.7)
+                    })
                 }
 
                 connection.outputStream.use { it.write(body.toString().toByteArray()) }
