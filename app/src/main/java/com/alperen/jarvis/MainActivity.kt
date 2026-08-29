@@ -311,6 +311,17 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
                 status.text = "TÜRKÇE SES PAKETİ BULUNAMADI"
             }
+
+            val maleVoice = tts.voices?.firstOrNull {
+                it.locale.language == "tr" &&
+                (it.name.contains("male", ignoreCase = true) || it.name.contains("erkek", ignoreCase = true))
+            }
+            if (maleVoice != null) {
+                tts.voice = maleVoice
+            }
+
+            tts.setPitch(0.82f)
+            tts.setSpeechRate(0.95f)
             tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                 override fun onStart(utteranceId: String?) {}
                 override fun onDone(utteranceId: String?) {
