@@ -5,13 +5,15 @@ import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import android.view.Gravity
-import android.view.ViewGroup
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -29,6 +31,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     }
 
     private lateinit var status: TextView
+    private lateinit var reactor: ReactorView
     private var recognizer: SpeechRecognizer? = null
     private lateinit var tts: TextToSpeech
 
@@ -39,32 +42,54 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         val layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setPadding(32, 32, 32, 32)
+            setPadding(48, 32, 48, 48)
             setBackgroundColor(Color.BLACK)
         }
 
         val title = TextView(this).apply {
-            text = "J.A.R.V.I.S"
-            textSize = 34f
-            setTextColor(Color.CYAN)
+            text = "J . A . R . V . I . S"
+            textSize = 24f
+            setTextColor(Color.parseColor("#00E5FF"))
+            typeface = Typeface.MONOSPACE
             gravity = Gravity.CENTER
+            letterSpacing = 0.15f
         }
+
+        reactor = ReactorView(this)
+        val reactorParams = LinearLayout.LayoutParams(560, 560).apply {
+            topMargin = 50
+            bottomMargin = 50
+        }
+
         status = TextView(this).apply {
-            text = "JARVIS hazır."
-            textSize = 20f
-            setTextColor(Color.WHITE)
+            text = "SİSTEM HAZIR"
+            textSize = 15f
+            setTextColor(Color.parseColor("#CCFFFFFF"))
+            typeface = Typeface.MONOSPACE
             gravity = Gravity.CENTER
-            setPadding(0, 30, 0, 30)
+            letterSpacing = 0.08f
+            setPadding(0, 0, 0, 50)
         }
+
         val button = Button(this).apply {
-            text = "🎙 DİNLE"
-            textSize = 18f
+            text = "◉  DİNLE"
+            textSize = 16f
+            typeface = Typeface.MONOSPACE
+            setTextColor(Color.parseColor("#00E5FF"))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = 60f
+                setStroke(3, Color.parseColor("#00E5FF"))
+                setColor(Color.parseColor("#1A000000"))
+            }
+            setPadding(60, 28, 60, 28)
             setOnClickListener { startListening() }
         }
 
-        layout.addView(title, LinearLayout.LayoutParams(-1, -2))
+        layout.addView(title, LinearLayout.LayoutParams(-2, -2))
+        layout.addView(reactor, reactorParams)
         layout.addView(status, LinearLayout.LayoutParams(-1, -2))
-        layout.addView(button, LinearLayout.LayoutParams(-1, -2))
+        layout.addView(button, LinearLayout.LayoutParams(-2, -2))
         setContentView(layout)
     }
 
@@ -74,24 +99,32 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             return
         }
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
-            status.text = "Bu cihazda konuşma tanıma kullanılamıyor."
+            status.text = "SES TANIMA KULLANILAMIYOR"
             speak("Bu cihazda konuşma tanıma kullanılamıyor.")
             return
         }
 
-        status.text = "Sizi dinliyorum..."
+        reactor.state = ReactorState.LISTENING
+        status.text = "DİNLİYORUM..."
         recognizer?.destroy()
         recognizer = SpeechRecognizer.createSpeechRecognizer(this).apply {
             setRecognitionListener(object : RecognitionListener {
                 override fun onResults(results: Bundle?) {
                     val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                         ?.firstOrNull().orEmpty()
-                    status.text = if (text.isBlank()) "Bir şey duyamadım." else "Siz: $text"
-                    handleCommand(text.lowercase(Locale.getDefault()))
+                    if (text.isBlank()) {
+                        status.text = "BİR ŞEY DUYAMADIM"
+                        reactor.state = ReactorState.IDLE
+                    } else {
+                        status.text = "SİZ: $text"
+                        reactor.state = ReactorState.THINKING
+                        handleCommand(text.lowercase(Locale.getDefault()))
+                    }
                     destroy()
                 }
                 override fun onError(error: Int) {
-                    status.text = "Tekrar deneyin."
+                    status.text = "TEKRAR DENEYİN"
+                    reactor.state = ReactorState.IDLE
                     speak("Tekrar deneyin.")
                     destroy()
                 }
@@ -140,7 +173,8 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     }
 
     private fun askGemini(prompt: String) {
-        status.text = "Düşünüyorum..."
+        status.text = "DÜŞÜNÜYORUM..."
+        reactor.state = ReactorState.THINKING
         Thread {
             try {
                 val apiKey = BuildConfig.GEMINI_API_KEY
@@ -173,7 +207,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                         .getJSONObject(0)
                         .getString("text")
                 } catch (e: Exception) {
-                    "HATA KODU $responseCode: $responseText"
+                    "Yapay zekadan cevap alınamadı."
                 }
 
                 runOnUiThread {
@@ -199,13 +233,15 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                 startListening()
             } else {
-                status.text = "Mikrofon izni verilmedi."
+                status.text = "MİKROFON İZNİ VERİLMEDİ"
+                reactor.state = ReactorState.IDLE
                 speak("Mikrofon izni olmadan sizi duyamam.")
             }
         }
     }
 
     private fun speak(text: String) {
+        reactor.state = ReactorState.SPEAKING
         if (::tts.isInitialized) tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "jarvis")
     }
 
@@ -213,10 +249,20 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         if (statusCode == TextToSpeech.SUCCESS) {
             val result = tts.setLanguage(Locale("tr", "TR"))
             if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
-                status.text = "Cihazda Türkçe sesli okuma paketi bulunamadı."
+                status.text = "TÜRKÇE SES PAKETİ BULUNAMADI"
             }
+            tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                override fun onStart(utteranceId: String?) {}
+                override fun onDone(utteranceId: String?) {
+                    runOnUiThread { reactor.state = ReactorState.IDLE }
+                }
+                @Deprecated("Deprecated in Java")
+                override fun onError(utteranceId: String?) {
+                    runOnUiThread { reactor.state = ReactorState.IDLE }
+                }
+            })
         } else {
-            status.text = "Sesli okuma başlatılamadı."
+            status.text = "SESLİ OKUMA BAŞLATILAMADI"
         }
     }
 
