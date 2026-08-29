@@ -15,6 +15,10 @@ import android.view.ViewGroup
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
+import org.json.JSONArray
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -131,8 +135,58 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             command.contains("merhaba") || command.contains("selam") -> {
                 speak("Merhaba. Size nasıl yardımcı olabilirim?")
             }
-            else -> speak("Komutu anladım: $command")
+            else -> askGemini(command)
         }
+    }
+
+    private fun askGemini(prompt: String) {
+        status.text = "Düşünüyorum..."
+        Thread {
+            try {
+                val apiKey = BuildConfig.GEMINI_API_KEY
+                val url = URL("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$apiKey")
+                val connection = url.openConnection() as HttpURLConnection
+                connection.requestMethod = "POST"
+                connection.setRequestProperty("Content-Type", "application/json")
+                connection.doOutput = true
+
+                val body = JSONObject().apply {
+                    put("contents", JSONArray().put(
+                        JSONObject().apply {
+                            put("parts", JSONArray().put(JSONObject().put("text", prompt)))
+                        }
+                    ))
+                }
+
+                connection.outputStream.use { it.write(body.toString().toByteArray()) }
+
+                val responseCode = connection.responseCode
+                val stream = if (responseCode in 200..299) connection.inputStream else connection.errorStream
+                val responseText = stream.bufferedReader().use { it.readText() }
+
+                val answer = try {
+                    JSONObject(responseText)
+                        .getJSONArray("candidates")
+                        .getJSONObject(0)
+                        .getJSONObject("content")
+                        .getJSONArray("parts")
+                        .getJSONObject(0)
+                        .getString("text")
+                } catch (e: Exception) {
+                    "Yapay zekadan cevap alınamadı."
+                }
+
+                runOnUiThread {
+                    status.text = answer
+                    speak(answer)
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    status.text = "Bağlantı hatası oluştu."
+                    speak("Bağlantı hatası oluştu.")
+                }
+            }
+        }.start()
     }
 
     override fun onRequestPermissionsResult(
