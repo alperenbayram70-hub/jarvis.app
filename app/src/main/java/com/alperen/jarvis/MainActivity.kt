@@ -218,15 +218,29 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 connection.doOutput = true
 
                 val memory = getMemory()
+                val persona = """
+                    Sen JARVIS'sin — sıcak, samimi, esprili ama saygılı bir kişisel asistansın.
+                    Robotik veya resmi konuşma, gerçek bir arkadaşla sohbet eder gibi konuş.
+                    Kısa ve doğal cümleler kur, gereksiz uzatma, sesli okunacağı için akıcı ve konuşma diline uygun yaz.
+                    Türkçe konuş. Ara sıra ismiyle hitap et (kullanıcı ismini söylediyse), sıcak bir ton kullan ama abartma.
+                    Kullanıcı hakkında hatırladığın bilgiler: ${if (memory.isNotBlank()) memory else "henüz yok"}.
+                    Uygun olduğunda bu bilgileri doğal şekilde cevaplarına yedir, ama her seferinde tekrar etme.
+                """.trimIndent()
+
                 val body = JSONObject().apply {
-                    if (memory.isNotBlank()) {
-                        put("system_instruction", JSONObject().apply {
-                            put("parts", JSONArray().put(JSONObject().put(
-                                "text",
-                                "Kullanıcı hakkında hatırlaman istenen bilgiler: $memory. Uygun olduğunda bu bilgileri cevaplarında kullan, ama gerekmedikçe tekrarlama."
-                            )))
-                        })
-                    }
+                    put("system_instruction", JSONObject().apply {
+                        put("parts", JSONArray().put(JSONObject().put("text", persona)))
+                    })
+                    put("contents", JSONArray().put(
+                        JSONObject().apply {
+                            put("parts", JSONArray().put(JSONObject().put("text", prompt)))
+                        }
+                    ))
+                    put("generationConfig", JSONObject().apply {
+                        put("maxOutputTokens", 150)
+                        put("temperature", 0.85)
+                    })
+                }
                     put("contents", JSONArray().put(
                         JSONObject().apply {
                             put("parts", JSONArray().put(JSONObject().put("text", prompt)))
