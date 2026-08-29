@@ -25,7 +25,7 @@ jobs:
         run: chmod +x gradlew
 
       - name: Debug APK derle
-        run: ./gradlew assembleDebug
+        run: ./gradlew assembleDebug -PGEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
 
       - name: APK'yı yükle
         uses: actions/upload-artifact@v4
