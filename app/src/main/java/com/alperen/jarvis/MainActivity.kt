@@ -4,15 +4,19 @@ import android.Manifest
 import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.database.Cursor
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.net.Uri
 import android.os.Bundle
+import android.provider.ContactsContract
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import android.telephony.SmsManager
 import android.view.Gravity
 import android.widget.Button
 import android.widget.LinearLayout
@@ -27,7 +31,13 @@ import java.util.Locale
 
 class MainActivity : Activity(), TextToSpeech.OnInitListener {
     companion object {
-        private const val RECORD_AUDIO_REQUEST_CODE = 10
+        private const val PERMISSION_REQUEST_CODE = 10
+        private val REQUIRED_PERMISSIONS = arrayOf(
+            Manifest.permission.RECORD_AUDIO,
+            Manifest.permission.CALL_PHONE,
+            Manifest.permission.SEND_SMS,
+            Manifest.permission.READ_CONTACTS
+        )
     }
 
     private lateinit var status: TextView
@@ -41,7 +51,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
     private fun addMemory(fact: String) {
         val current = getMemory()
-        val updated = if (current.isBlank()) fact else "$current\n$fact"
+        val updated = if (current.isBlank()) fact else current + "\n" + fact
         prefs.edit().putString("memory", updated).apply()
     }
 
@@ -72,7 +82,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
 
         status = TextView(this).apply {
-            text = "SİSTEM HAZIR"
+            text = "SISTEM HAZIR"
             textSize = 15f
             setTextColor(Color.parseColor("#CCFFFFFF"))
             typeface = Typeface.MONOSPACE
@@ -101,16 +111,27 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         layout.addView(status, LinearLayout.LayoutParams(-1, -2))
         layout.addView(button, LinearLayout.LayoutParams(-2, -2))
         setContentView(layout)
+
+        requestMissingPermissions()
+    }
+
+    private fun requestMissingPermissions() {
+        val missing = REQUIRED_PERMISSIONS.filter {
+            checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isNotEmpty()) {
+            requestPermissions(missing.toTypedArray(), PERMISSION_REQUEST_CODE)
+        }
     }
 
     private fun startListening() {
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), RECORD_AUDIO_REQUEST_CODE)
+            requestMissingPermissions()
             return
         }
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
             status.text = "SES TANIMA KULLANILAMIYOR"
-            speak("Bu cihazda konuşma tanıma kullanılamıyor.")
+            speak("Bu cihazda konusma tanima kullanilamiyor.")
             return
         }
 
@@ -128,7 +149,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     } else {
                         status.text = "SIZ: " + text
                         reactor.state = ReactorState.THINKING
-                        handleCommand(text.lowercase(Locale.getDefault()))
+                        handleCommand(text.lowercase(Locale.getDefault()), text)
                     }
                     destroy()
                 }
@@ -155,23 +176,64 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         recognizer?.startListening(intent)
     }
 
-    private fun handleCommand(command: String) {
+    // Rehberden isim gecerek numara bulur
+    private fun findContactNumber(name: String): String? {
+        if (checkSelfPermission(Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
+            return null
+        }
+        val cursor: Cursor? = contentResolver.query(
+            ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+            arrayOf(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME, ContactsContract.CommonDataKinds.Phone.NUMBER),
+            null, null, null
+        )
+        var result: String? = null
+        cursor?.use {
+            while (it.moveToNext()) {
+                val displayName = it.getString(it.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME))
+                if (displayName != null && displayName.lowercase(Locale.getDefault()).contains(name)) {
+                    result = it.getString(it.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.NUMBER))
+                    return@use
+                }
+            }
+        }
+        return result
+    }
+
+    // Yuklu uygulamalar arasinda isimle eslesen paketi bulur
+    private fun findAppPackage(appName: String): String? {
+        val pm = packageManager
+        val apps = pm.getInstalledApplications(PackageManager.GET_META_DATA)
+        for (appInfo in apps) {
+            val label = pm.getApplicationLabel(appInfo).toString()
+            if (label.lowercase(Locale.getDefault()).contains(appName)) {
+                return appInfo.packageName
+            }
+        }
+        return null
+    }
+
+    private fun handleCommand(command: String, originalText: String) {
         if (command.contains("saat")) {
             val time = SimpleDateFormat("HH:mm", Locale("tr", "TR")).format(Date())
             status.text = "Saat: " + time
             speak("Saat " + time)
+
         } else if (command.contains("youtube")) {
-            startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://www.youtube.com")))
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com")))
             speak("YouTube'u aciyorum.")
+
         } else if (command.contains("hava")) {
-            startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://www.google.com/search?q=hava+durumu")))
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=hava+durumu")))
             speak("Hava durumunu ariyorum.")
+
         } else if (command.contains("ses ac") || command.contains("sesi ac")) {
             val audio = getSystemService(AUDIO_SERVICE) as android.media.AudioManager
             audio.adjustVolume(android.media.AudioManager.ADJUST_RAISE, android.media.AudioManager.FLAG_SHOW_UI)
             speak("Sesi aciyorum.")
+
         } else if (command.contains("merhaba") || command.contains("selam")) {
             speak("Merhaba. Size nasil yardimci olabilirim?")
+
         } else if (command.startsWith("hatirla")) {
             val fact = command.removePrefix("hatirla").trim().removePrefix(":").trim()
             if (fact.isNotBlank()) {
@@ -181,6 +243,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             } else {
                 speak("Ne hatirlamami istediginizi anlamadim.")
             }
+
         } else if (command.contains("ne hatirliyorsun") || command.contains("neler biliyorsun")) {
             val mem = getMemory()
             if (mem.isBlank()) {
@@ -188,10 +251,89 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             } else {
                 speak("Sunlari hatirliyorum: " + mem)
             }
+
         } else if (command.contains("hafizani sil") || command.contains("unut")) {
             prefs.edit().remove("memory").apply()
             status.text = "HAFIZA TEMIZLENDI"
             speak("Hafizami temizledim.")
+
+        } else if (command.startsWith("ara ") || command.contains("'i ara") || command.contains("'yi ara") || command.contains("i ara") || command.contains("yi ara")) {
+            // Ornek: "ahmet'i ara" veya "ara ahmet"
+            val name = command
+                .replace("ara", "")
+                .replace("'i", "")
+                .replace("'yi", "")
+                .trim()
+            if (name.isBlank()) {
+                speak("Kimi aramami istediginizi anlamadim.")
+            } else {
+                val number = findContactNumber(name)
+                if (number != null) {
+                    if (checkSelfPermission(Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) {
+                        val callIntent = Intent(Intent.ACTION_CALL, Uri.parse("tel:" + number))
+                        startActivity(callIntent)
+                        speak(name + " araniyor.")
+                    } else {
+                        speak("Arama izni verilmemis.")
+                    }
+                } else {
+                    speak(name + " rehberde bulunamadi.")
+                }
+            }
+
+        } else if (command.contains("mesaj gonder") || command.contains("mesaj at")) {
+            // Ornek: "ahmet'e mesaj gonder: bugun saat 5te bulusalim"
+            val parts = originalText.split(":", limit = 2)
+            if (parts.size < 2) {
+                speak("Mesaji nasil yazmami istediginizi anlamadim. Ornek: ahmete mesaj gonder iki nokta ust uste mesajiniz.")
+            } else {
+                val recipientPart = parts[0].lowercase(Locale.getDefault())
+                val messageBody = parts[1].trim()
+                val name = recipientPart
+                    .replace("mesaj gonder", "")
+                    .replace("mesaj at", "")
+                    .replace("'e", "")
+                    .replace("'a", "")
+                    .replace("e", "")
+                    .trim()
+                val number = findContactNumber(name)
+                if (number != null) {
+                    if (checkSelfPermission(Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED) {
+                        try {
+                            val smsManager = SmsManager.getDefault()
+                            smsManager.sendTextMessage(number, null, messageBody, null, null)
+                            speak(name + " kisisine mesaj gonderildi.")
+                        } catch (e: Exception) {
+                            speak("Mesaj gonderilirken bir hata olustu.")
+                        }
+                    } else {
+                        speak("Mesaj gonderme izni verilmemis.")
+                    }
+                } else {
+                    speak(name + " rehberde bulunamadi.")
+                }
+            }
+
+        } else if (command.contains(" ac") && !command.contains("sesi ac") && !command.contains("ses ac")) {
+            // Ornek: "spotify ac" veya "whatsapp'i ac"
+            val appName = command
+                .replace(" ac", "")
+                .replace("'i", "")
+                .replace("'yi", "")
+                .trim()
+            val packageName = findAppPackage(appName)
+            if (packageName != null) {
+                val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+                if (launchIntent != null) {
+                    startActivity(launchIntent)
+                    speak(appName + " aciliyor.")
+                } else {
+                    speak(appName + " acilamadi.")
+                }
+            } else {
+                speak(appName + " adinda bir uygulama bulamadim.")
+            }
+
         } else {
             askGemini(command)
         }
@@ -278,13 +420,10 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == RECORD_AUDIO_REQUEST_CODE) {
-            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                startListening()
-            } else {
-                status.text = "MIKROFON IZNI VERILMEDI"
-                reactor.state = ReactorState.IDLE
-                speak("Mikrofon izni olmadan sizi duyamam.")
+        if (requestCode == PERMISSION_REQUEST_CODE) {
+            val allGranted = grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }
+            if (!allGranted) {
+                status.text = "BAZI IZINLER VERILMEDI"
             }
         }
     }
